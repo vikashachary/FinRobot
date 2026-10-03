@@ -64,6 +64,9 @@ def main():
     parser.add_argument("--margin-improvement", type=float, default=0.01, help="Annual margin improvement assumption (default: 1%)")
     parser.add_argument("--sga-margin-improvement", type=float, default=-0.005, help="SG&A margin change assumption (default: -0.5% efficiency gain)")
 
+    # TimesFM Options
+    parser.add_argument("--use-timesfm", action="store_true", help="Use Google TimesFM zero-shot foundation model for data-driven revenue and financial forecasts.")
+
     # API Options
     parser.add_argument("--period", type=str, default="annual", choices=["annual", "quarterly"], help="Data period (annual or quarterly)")
 
@@ -175,13 +178,30 @@ def main():
     
     print(f"Using {latest_year} as base year for forecasts")
     
+    rev_growth_assumptions = {
+        "2025E": args.revenue_growth_2025, 
+        "2026E": args.revenue_growth_2026, 
+        "2027E": args.revenue_growth_2027
+    }
+
+    timesfm_metadata = None
+    if args.use_timesfm:
+        print("🤖 Using Google TimesFM for empirical zero-shot financial forecasting...")
+        try:
+            from modules.timesfm_financial_predictor import predict_financial_projections_with_timesfm
+            timesfm_res = predict_financial_projections_with_timesfm(historical_metrics_df)
+            tfm_growth = timesfm_res.get("revenue_growth_assumptions", {})
+            if tfm_growth:
+                for k, v in tfm_growth.items():
+                    rev_growth_assumptions[k] = v
+                print(f"✅ TimesFM derived revenue growth rates: {rev_growth_assumptions}")
+                timesfm_metadata = timesfm_res
+        except Exception as e:
+            print(f"⚠️ TimesFM forecasting failed ({e}), falling back to standard assumptions.")
+
     forecast_config = {
         "revenue_base_year": latest_year,
-        "revenue_growth_assumptions": {
-            "2025E": args.revenue_growth_2025, 
-            "2026E": args.revenue_growth_2026, 
-            "2027E": args.revenue_growth_2027
-        }, 
+        "revenue_growth_assumptions": rev_growth_assumptions, 
         "ebitda_growth_factor": 1.05,
         "margin_improvement": {
             "Contribution Margin": args.margin_improvement, 
@@ -205,6 +225,16 @@ def main():
     output_csv_path = os.path.join(output_dir, args.output_csv_name)
     final_data_df.to_csv(output_csv_path, index=False)
     print(f"Successfully saved financial analysis to: {output_csv_path}")
+
+    if timesfm_metadata:
+        timesfm_json_path = os.path.join(output_dir, "timesfm_projections.json")
+        try:
+            with open(timesfm_json_path, "w") as f:
+                json.dump(timesfm_metadata, f, indent=2)
+            print(f"Saved TimesFM projections to: {timesfm_json_path}")
+        except Exception as e:
+            print(f"Could not save TimesFM projections: {e}")
+
 
     # 4. Peer Comparison Analysis
     projected_peer_ebitda = None
