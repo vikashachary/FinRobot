@@ -90,7 +90,7 @@ Support all conclusions with data references."""
 
         try:
             from openai import OpenAI
-            client_kwargs = {"api_key": self.api_key}
+            client_kwargs = {"api_key": self.api_key, "timeout": 60.0}
             if self.base_url:
                 client_kwargs["base_url"] = self.base_url
             self.client = OpenAI(**client_kwargs)
@@ -98,6 +98,13 @@ Support all conclusions with data references."""
         except Exception as e:
             logger.warning(f"⚠️ Could not initialize OpenAI-compatible client for {self.service}: {e}")
             self.client = None
+
+    def _clean_output(self, text: str) -> str:
+        """清理输出中的思考标签"""
+        if not text:
+            return text
+        import re
+        return re.sub(r'<think>[\s\S]*?</think>', '', text).strip()
 
     def _generate_with_gemini_rest(self, system_prompt: str, user_prompt: str) -> Optional[str]:
         """使用Gemini REST API直接生成"""
@@ -122,7 +129,7 @@ Support all conclusions with data references."""
                 data = json.loads(resp.read().decode("utf-8"))
                 candidates = data.get("candidates", [])
                 if candidates and "content" in candidates[0] and "parts" in candidates[0]["content"]:
-                    return candidates[0]["content"]["parts"][0]["text"].strip()
+                    return self._clean_output(candidates[0]["content"]["parts"][0]["text"])
         except Exception as e:
             logger.error(f"Gemini REST fallback failed: {e}")
         return None
@@ -144,7 +151,8 @@ Support all conclusions with data references."""
                     temperature=self.config.temperature,
                     max_tokens=self.config.max_tokens
                 )
-                return response.choices[0].message.content
+                raw = response.choices[0].message.content or ""
+                return self._clean_output(raw)
             except Exception as e:
                 logger.warning(f"Client generation failed for {self.service}: {e}")
                 if self.service == "gemini":

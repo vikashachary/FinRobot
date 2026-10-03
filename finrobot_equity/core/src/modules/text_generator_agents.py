@@ -166,6 +166,17 @@ def _call_gemini_rest_api(api_key: str, system_prompt: str, user_prompt: str, mo
     return None
 
 
+import re
+
+def _clean_model_output(text: str) -> str:
+    """Removes thinking/reasoning tags and leading thinking artifacts from model outputs."""
+    if not text:
+        return text
+    # Remove <think>...</think> tags if any
+    cleaned = re.sub(r'<think>[\s\S]*?</think>', '', text).strip()
+    return cleaned
+
+
 def generate_text_section(
     data: Dict, 
     prompt_type: str, 
@@ -220,7 +231,7 @@ def generate_text_section(
         # Method 1: Try OpenAI-compatible endpoint
         try:
             from openai import OpenAI
-            client = OpenAI(api_key=api_key, base_url=gemini_base_url)
+            client = OpenAI(api_key=api_key, base_url=gemini_base_url, timeout=60.0)
             response = client.chat.completions.create(
                 model=gemini_model,
                 messages=[
@@ -228,9 +239,10 @@ def generate_text_section(
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.7,
-                max_tokens=1000
+                max_tokens=2048
             )
-            generated_text = response.choices[0].message.content.strip()
+            raw_text = response.choices[0].message.content or ""
+            generated_text = _clean_model_output(raw_text)
             if generated_text:
                 print(f"✅ Successfully generated '{prompt_type}' via Gemini ({len(generated_text)} chars)")
                 return generated_text
@@ -239,13 +251,14 @@ def generate_text_section(
             
         # Method 2: Try direct Gemini REST API
         try:
-            generated_text = _call_gemini_rest_api(
+            raw_text = _call_gemini_rest_api(
                 api_key=api_key, 
                 system_prompt=system_prompt, 
                 user_prompt=user_prompt, 
                 model=gemini_model, 
                 base_url=gemini_base_url
-            )
+            ) or ""
+            generated_text = _clean_model_output(raw_text)
             if generated_text:
                 print(f"✅ Successfully generated '{prompt_type}' via Gemini REST ({len(generated_text)} chars)")
                 return generated_text
@@ -264,7 +277,7 @@ def generate_text_section(
         
         try:
             from openai import OpenAI
-            client = OpenAI(api_key=api_key, base_url=nvidia_base_url)
+            client = OpenAI(api_key=api_key, base_url=nvidia_base_url, timeout=60.0)
             response = client.chat.completions.create(
                 model=nvidia_model,
                 messages=[
@@ -272,9 +285,10 @@ def generate_text_section(
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.7,
-                max_tokens=1000
+                max_tokens=2048
             )
-            generated_text = response.choices[0].message.content.strip()
+            raw_text = response.choices[0].message.content or ""
+            generated_text = _clean_model_output(raw_text)
             if generated_text:
                 print(f"✅ Successfully generated '{prompt_type}' via NVIDIA ({len(generated_text)} chars)")
                 return generated_text
@@ -292,7 +306,7 @@ def generate_text_section(
         
         try:
             from openai import OpenAI
-            client_kwargs = {"api_key": api_key}
+            client_kwargs = {"api_key": api_key, "timeout": 60.0}
             if base_url:
                 client_kwargs["base_url"] = base_url
                 print(f"📡 Using OpenAI base URL: {base_url}")
@@ -305,9 +319,10 @@ def generate_text_section(
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.7,
-                max_tokens=1000
+                max_tokens=2048
             )
-            generated_text = response.choices[0].message.content.strip()
+            raw_text = response.choices[0].message.content or ""
+            generated_text = _clean_model_output(raw_text)
             if generated_text:
                 print(f"✅ Successfully generated '{prompt_type}' via OpenAI ({len(generated_text)} chars)")
                 return generated_text
