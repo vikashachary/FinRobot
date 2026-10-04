@@ -8,10 +8,14 @@ __pycache__/
 *.jpg
 *.png
 !finrobot_equity/web_app/static/*.png
+!figs/*.png
 quant/
 coding/
 *.egg-info/
 .DS_Store
+
+# Editor config (personal, not shared)
+.vscode/
 projects/
 dist/
 tmp/
@@ -41,3 +45,4 @@ finrobot_equity/logs/
 finrobot_equity/web_app/data/*.db
 finrobot_equity/core/output/
 output/
+finrobot_equity/core/output/build/
