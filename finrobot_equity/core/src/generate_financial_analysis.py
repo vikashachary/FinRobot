@@ -67,6 +67,11 @@ def main():
     # TimesFM Options
     parser.add_argument("--use-timesfm", action="store_true", help="Use Google TimesFM zero-shot foundation model for data-driven revenue and financial forecasts.")
 
+    # Laya Decision Model & Performance Options
+    parser.add_argument("--enable-laya", action="store_true", default=True, help="Enable Laya RLCD System 1 decision model for sub-50ms investment ratings and risk decisions (default: True).")
+    parser.add_argument("--disable-laya", dest="enable_laya", action="store_false", help="Disable Laya decision model.")
+    parser.add_argument("--parallel-text-workers", type=int, default=2, help="Number of concurrent worker threads for LLM text generation (default: 2, paced for rate-limits).")
+
     # API Options
     parser.add_argument("--period", type=str, default="annual", choices=["annual", "quarterly"], help="Data period (annual or quarterly)")
 
@@ -441,13 +446,54 @@ def main():
             print(f"Error performing catalyst analysis: {e}")
             print("Continuing without catalyst analysis...")
 
-    # 5. Text Generation (Unified Logic)
+    # 4.8 Laya RLCD System 1 Decision Engine (<50ms)
+    laya_dossier = None
+    if getattr(args, "enable_laya", True):
+        print(f"\n⚡ Running Laya RLCD System 1 Decision Engine (<50ms)...")
+        try:
+            from modules.laya_decision_engine import LayaDecisionEngine
+            laya_engine = LayaDecisionEngine()
+
+            # Extract risk factors
+            risk_list = []
+            if catalyst_results and "catalysts" in catalyst_results:
+                risk_list = [c["description"] for c in catalyst_results["catalysts"] if c.get("sentiment") == "negative"]
+            if not risk_list:
+                risk_list = ["Market cyclicality", "Regulatory compliance", "Competitive fee compression"]
+
+            # Sentiment score
+            sentiment_val = None
+            if retail_sentiment_data and isinstance(retail_sentiment_data, dict):
+                sentiment_val = retail_sentiment_data.get("aggregate_sentiment_score")
+
+            laya_dossier = laya_engine.generate_system1_dossier(
+                company_ticker=args.company_ticker,
+                company_name=args.company_name,
+                forecast_growth=rev_growth_assumptions,
+                timesfm_metadata=timesfm_metadata,
+                risk_factors=risk_list,
+                sentiment_score=sentiment_val
+            )
+
+            laya_path = os.path.join(output_dir, "laya_decision.json")
+            with open(laya_path, "w", encoding="utf-8") as f:
+                json.dump(laya_dossier, f, indent=2)
+            print(f"✅ Laya System 1 Decision completed in {laya_dossier['total_latency_ms']}ms!")
+            print(f"   Rating: {laya_dossier['investment_rating']['label']} (Calibrated Confidence: {laya_dossier['investment_rating']['confidence']*100:.1f}%)")
+            print(f"   System Routing: {laya_dossier['system_routing']}")
+            print(f"   Saved Laya decision to: {laya_path}")
+        except Exception as e:
+            print(f"⚠️ Error running Laya Decision Engine: {e}")
+
+    # 5. Text Generation (Parallel Execution with ThreadPoolExecutor)
     if args.generate_text_sections:
         print(f"\nGenerating AI-powered text sections using {llm_service.upper()}...")
         
         if not llm_api_key:
             print(f"Error: {llm_service.upper()} API key not loaded. Skipping text generation.")
         else:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
             data_for_text_gen = {
                 "financial_metrics": final_data_df,
                 "peer_ebitda": projected_peer_ebitda,
@@ -456,32 +502,28 @@ def main():
                 "enhanced_news": enhanced_news_data,
                 "retail_sentiment": retail_sentiment_data,
                 "sensitivity_analysis": sensitivity_results,
-                "catalyst_analysis": catalyst_results
+                "catalyst_analysis": catalyst_results,
+                "laya_decision": laya_dossier
             }
             
-            # A single list for all text types to be generated (including news_summary)
             all_text_types = [
                 "tagline", "company_overview", "investment_overview", 
                 "valuation_overview", "risks", "competitor_analysis", 
-                "major_takeaways", "news_summary"  # NEW
+                "major_takeaways", "news_summary"
             ]
-            
-            # A single loop calling the unified generation function
-            for text_type in all_text_types:
-                # Skip news_summary if no news data available
+
+            def _generate_single_section(text_type: str):
                 if text_type == "news_summary" and not company_news:
                     print(f"Skipping 'news_summary' - no news data available")
-                    # Create placeholder file
                     fallback_text = f"No recent news available for {args.company_name} ({args.company_ticker})."
                     file_path = os.path.join(text_output_dir, f"{text_type}.txt")
                     with open(file_path, "w", encoding="utf-8") as f:
                         f.write(fallback_text)
                     print(f"Created placeholder for '{text_type}' at {file_path}")
-                    continue
+                    return text_type, fallback_text
                 
                 print(f"Generating '{text_type}' for {args.company_name} ({args.company_ticker})...")
                 try:
-                    # Call the single, unified function for all types
                     generated_text = generate_text_section(
                         data=data_for_text_gen, 
                         prompt_type=text_type, 
@@ -493,7 +535,6 @@ def main():
                         service=llm_service
                     )
                     
-                    # Fallback validation can remain here as a safety net
                     if text_type == "competitor_analysis" and (not generated_text or len(generated_text.split('.')) < 3):
                          print(f"⚠️ Warning: Competitor analysis seems too short, using fallback.")
                          generated_text = f"{args.company_name} demonstrates competitive positioning within its industry sector through consistent financial performance and strategic market positioning relative to key competitors."
@@ -510,15 +551,31 @@ def main():
                     with open(file_path, "w", encoding="utf-8") as f:
                         f.write(generated_text)
                     print(f"✅ Successfully generated and saved '{text_type}' to {file_path}")
+                    return text_type, generated_text
                     
                 except Exception as e:
                     print(f"Error generating text for '{text_type}': {e}")
-                    # Create a fallback file if generation fails
                     fallback_text = f"{args.company_name} ({args.company_ticker}) {text_type.replace('_', ' ')} analysis not available."
                     file_path = os.path.join(text_output_dir, f"{text_type}.txt")
                     with open(file_path, "w", encoding="utf-8") as f:
                         f.write(fallback_text)
                     print(f"Created fallback text for '{text_type}' at {file_path}")
+                    return text_type, fallback_text
+
+            workers = max(1, min(len(all_text_types), getattr(args, "parallel_text_workers", 2)))
+            print(f"⚡ Launching parallel text generation across {workers} worker threads ({llm_service.upper()})...")
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {}
+                import time
+                for tt in all_text_types:
+                    futures[executor.submit(_generate_single_section, tt)] = tt
+                    time.sleep(0.5)
+                for future in as_completed(futures):
+                    tt_name = futures[future]
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        print(f"⚠️ Exception in thread generating '{tt_name}': {exc}")
     else:
         print("Skipping text generation (not enabled)")
 

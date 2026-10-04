@@ -8,8 +8,8 @@ fmp_api_key = YOUR_FMP_API_KEY
 # ==============================================================================
 # Choose the default AI service to use for generating text and reports:
 # Options: openai, nvidia, gemini
-# Default: openai
-default_service = openai
+# Default: gemini
+default_service = gemini
 
 # ==============================================================================
 # OpenAI Configuration
@@ -60,13 +60,12 @@ gemini_api_key = YOUR_GEMINI_API_KEY
 gemini_base_url = https://generativelanguage.googleapis.com/v1beta/openai/
 
 # Google Gemini Model (choose one of the following):
-#   gemini-2.5-flash - Latest fast and powerful model (recommended)
+#   gemini-3.8-flash - Latest fast and powerful model (recommended)
 #   gemini-2.5-pro   - Flagship reasoning model
 #   gemini-1.5-flash - Lightweight and fast
 #   gemini-1.5-pro   - Highly capable model
-#   gemini-3.6-flash - Previous generation flagship
-# Default: gemini-2.5-flash
-gemini_model = gemini-2.5-flash
+# Default: gemini-3.8-flash
+gemini_model = gemini-3.8-flash
 
 # ==============================================================================
 # Other Integrations

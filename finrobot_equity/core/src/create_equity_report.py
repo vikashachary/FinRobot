@@ -173,17 +173,23 @@ def validate_and_fix_text_content(text_content: str, text_type: str, company_nam
     # Check if content looks like CSV data (especially for competitor_analysis and major_takeaways)
     if text_type in ["competitor_analysis", "major_takeaways"]:
         content_lower = text_content.lower().strip()
-        # Detect CSV-like patterns (more robust detection)
-        first_line = content_lower.split('\n')[0] if '\n' in content_lower else content_lower
-        is_csv_like = (
-            content_lower.startswith("year,") or 
-            content_lower.startswith("ticker,") or
-            content_lower.startswith("date,") or
-            content_lower.count(",") > 20 or  # Many commas suggest CSV
-            (first_line.count(",") >= 3 and not any(word in first_line for word in ["the", "and", "is", "are", "has", "have"]))  # CSV header pattern
+        lines = [l.strip() for l in content_lower.split('\n') if l.strip()]
+        first_line = lines[0] if lines else ""
+        # True CSV detection: header row pattern with tabular rows
+        is_header = (
+            first_line.startswith("year,") or 
+            first_line.startswith("ticker,") or
+            first_line.startswith("date,") or
+            (first_line.count(",") >= 3 and not any(word in first_line for word in ["the", "and", "is", "are", "has", "have", "revenue", "margin", "growth"]))
         )
-        if is_csv_like:
-            print(f"⚠️ Warning: {text_type} contains CSV-like data, marking for regeneration")
+        looks_like_raw_csv_table = False
+        if is_header and len(lines) > 2:
+            comma_counts = [l.count(",") for l in lines[:4]]
+            if len(set(comma_counts)) == 1 and comma_counts[0] >= 3:
+                looks_like_raw_csv_table = True
+
+        if looks_like_raw_csv_table:
+            print(f"⚠️ Warning: {text_type} contains raw CSV table data, marking for regeneration")
             return ""  # Return empty to trigger regeneration
     
     print(f"✅ {text_type} validation passed ({len(text_content)} chars)")
@@ -921,6 +927,22 @@ def main():
         except Exception as e:
             print(f"⚠️ Error loading retail sentiment insights: {e}")
             report_data["retail_sentiment"] = {}
+
+    # Load Laya RLCD System 1 Decision
+    laya_decision_path = os.path.join(os.path.dirname(args.analysis_csv), "laya_decision.json")
+    if os.path.exists(laya_decision_path):
+        print(f"Loading Laya System 1 decision from {laya_decision_path}...")
+        try:
+            with open(laya_decision_path, "r", encoding="utf-8") as f:
+                laya_data = json.load(f)
+            report_data["laya_decision"] = laya_data
+            if "investment_rating" in laya_data and "label" in laya_data["investment_rating"]:
+                laya_rating = laya_data["investment_rating"]["label"]
+                laya_conf = laya_data["investment_rating"].get("confidence", 0.0)
+                report_data["rating"] = f"{laya_rating} (Laya: {laya_conf*100:.0f}%)"
+                print(f"✅ Laya System 1 Decision loaded: {laya_rating} (Calibrated Confidence: {laya_conf*100:.1f}%)")
+        except Exception as e:
+            print(f"⚠️ Error loading Laya decision: {e}")
 
     # --- Format tables for HTML (EXCLUDE ESTIMATES FOR PAGE 3 TABLES) ---
     print("Formatting tables for HTML...")

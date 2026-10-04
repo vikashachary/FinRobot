@@ -91,9 +91,9 @@ def _prepare_user_prompt(data: Dict, prompt_type: str, company_name: str, compan
     return prompt
 
 
-def _call_gemini_rest_api(api_key: str, system_prompt: str, user_prompt: str, model: str = "gemini-2.5-flash", base_url: str = None) -> Optional[str]:
+def _call_gemini_rest_api(api_key: str, system_prompt: str, user_prompt: str, model: str = "gemini-3.8-flash", base_url: str = None) -> Optional[str]:
     """Calls Gemini REST API directly using standard urllib."""
-    model_name = model.replace("models/", "") if model else "gemini-2.5-flash"
+    model_name = model.replace("models/", "") if model else "gemini-3.8-flash"
     
     # Handle base URL
     if base_url and "googleapis.com" in base_url and not base_url.endswith("/openai/") and not base_url.endswith("/openai"):
@@ -219,7 +219,7 @@ def generate_text_section(
     
     # Provider 1: Google Gemini
     if selected_service == "gemini":
-        gemini_model = model or "gemini-2.5-flash"
+        gemini_model = model or "gemini-3.8-flash"
         gemini_base_url = base_url or "https://generativelanguage.googleapis.com/v1beta/openai/"
         
         # Clean invalid placeholder URLs (e.g. https://gemini.api.ai)
@@ -228,43 +228,58 @@ def generate_text_section(
             
         print(f"🤖 Using Gemini model: {gemini_model}")
         
-        # Method 1: Try OpenAI-compatible endpoint
-        try:
-            from openai import OpenAI
-            client = OpenAI(api_key=api_key, base_url=gemini_base_url, timeout=60.0)
-            response = client.chat.completions.create(
-                model=gemini_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.7,
-                max_tokens=2048
-            )
-            raw_text = response.choices[0].message.content or ""
-            generated_text = _clean_model_output(raw_text)
-            if generated_text:
-                print(f"✅ Successfully generated '{prompt_type}' via Gemini ({len(generated_text)} chars)")
-                return generated_text
-        except Exception as e_openai:
-            logger.info(f"Gemini OpenAI compatibility call attempt note: {e_openai}. Falling back to direct Gemini REST API...")
+        # Method 1: Try OpenAI-compatible endpoint with exponential backoff
+        for attempt in range(4):
+            try:
+                from openai import OpenAI
+                client = OpenAI(api_key=api_key, base_url=gemini_base_url, timeout=60.0)
+                response = client.chat.completions.create(
+                    model=gemini_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=2048
+                )
+                raw_text = response.choices[0].message.content or ""
+                generated_text = _clean_model_output(raw_text)
+                if generated_text:
+                    print(f"✅ Successfully generated '{prompt_type}' via Gemini ({len(generated_text)} chars)")
+                    return generated_text
+            except Exception as e_openai:
+                err_str = str(e_openai)
+                if "429" in err_str and attempt < 3:
+                    wait_sec = (attempt + 1) * 8
+                    print(f"⏳ Gemini rate-limit (429) on '{prompt_type}', pacing retry in {wait_sec}s (attempt {attempt+1}/3)...")
+                    import time
+                    time.sleep(wait_sec)
+                    continue
+                logger.info(f"Gemini OpenAI compatibility call attempt note: {e_openai}. Falling back to direct Gemini REST API...")
+                break
             
-        # Method 2: Try direct Gemini REST API
-        try:
-            raw_text = _call_gemini_rest_api(
-                api_key=api_key, 
-                system_prompt=system_prompt, 
-                user_prompt=user_prompt, 
-                model=gemini_model, 
-                base_url=gemini_base_url
-            ) or ""
-            generated_text = _clean_model_output(raw_text)
-            if generated_text:
-                print(f"✅ Successfully generated '{prompt_type}' via Gemini REST ({len(generated_text)} chars)")
-                return generated_text
-        except Exception as e_rest:
-            print(f"❌ Error generating '{prompt_type}' with Gemini API: {e_rest}")
-            return _get_fallback_text(prompt_type, company_name)
+        # Method 2: Try direct Gemini REST API with retry
+        for attempt in range(3):
+            try:
+                raw_text = _call_gemini_rest_api(
+                    api_key=api_key, 
+                    system_prompt=system_prompt, 
+                    user_prompt=user_prompt, 
+                    model=gemini_model, 
+                    base_url=gemini_base_url
+                ) or ""
+                generated_text = _clean_model_output(raw_text)
+                if generated_text:
+                    print(f"✅ Successfully generated '{prompt_type}' via Gemini REST ({len(generated_text)} chars)")
+                    return generated_text
+            except Exception as e_rest:
+                if "429" in str(e_rest) and attempt < 2:
+                    wait_sec = (attempt + 1) * 10
+                    import time
+                    time.sleep(wait_sec)
+                    continue
+                print(f"❌ Error generating '{prompt_type}' with Gemini API: {e_rest}")
+                return _get_fallback_text(prompt_type, company_name)
             
         return _get_fallback_text(prompt_type, company_name)
 

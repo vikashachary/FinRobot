@@ -80,7 +80,7 @@ def get_llm_config(config=None, service: Optional[str] = None, config_path: Opti
         "gemini": {
             "api_key": _get_val("gemini_api_key", "GEMINI_API_KEY") or _get_val("gemini_api_key", "GOOGLE_API_KEY"),
             "base_url": _get_val("gemini_base_url", "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"),
-            "model": _get_val("gemini_model", "GEMINI_MODEL", "gemini-2.5-flash")
+            "model": _get_val("gemini_model", "GEMINI_MODEL", "gemini-3.8-flash")
         }
     }
 
@@ -93,15 +93,15 @@ def get_llm_config(config=None, service: Optional[str] = None, config_path: Opti
             selected_service = "nvidia"
     
     if not selected_service or selected_service not in services_config:
-        # Auto-detect if valid key exists
-        if services_config["openai"]["api_key"]:
-            selected_service = "openai"
+        # Auto-detect if valid key exists (prefer gemini)
+        if services_config["gemini"]["api_key"]:
+            selected_service = "gemini"
         elif services_config["nvidia"]["api_key"]:
             selected_service = "nvidia"
-        elif services_config["gemini"]["api_key"]:
-            selected_service = "gemini"
-        else:
+        elif services_config["openai"]["api_key"]:
             selected_service = "openai"
+        else:
+            selected_service = "gemini"
 
     active_cfg = services_config.get(selected_service, services_config["openai"])
     return {
