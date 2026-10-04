@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 _repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
+_autogen_dir = os.path.join(_repo_root, "finrobot_autogen")
+if _autogen_dir not in sys.path:
+    sys.path.insert(0, _autogen_dir)
 
 
 def predict_financial_projections_with_timesfm(

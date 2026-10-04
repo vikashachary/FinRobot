@@ -13,6 +13,7 @@ import os
 # Ensure import paths
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "finrobot_autogen")))
 
 from finrobot.functional.timesfm_utils import TimesFMForecaster, get_timesfm_forecaster
 from finrobot.functional.forecasting import TimeSeriesForecastingUtils
