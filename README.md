@@ -42,6 +42,26 @@ FinRobot is three projects sharing one financial domain layer. They are not thre
 
 ---
 
+## ⚡ QuickActions CLI Launcher
+
+For fast, interactive execution of premarket research sidecars, scrip equity reports, TimesFM foundation forecasts, and benchmarks with automatic `.venv` / `venv` resolution:
+
+```bash
+# Launch interactive terminal menu
+./quickActions/run.sh
+
+# Or run direct one-liners
+./quickActions/run.sh --premarket               # Indian Market Premarket Analysis Sidecar (NSE/BSE)
+./quickActions/run.sh --scrip RELIANCE.NS       # Scrip Institutional Report (Supports Indian & US Equities)
+./quickActions/run.sh --benchmark               # Google TimesFM vs Baselines Benchmark Suite
+./quickActions/run.sh --test-laya               # Laya Decision Engine Test Suite
+./quickActions/run.sh --web-app                 # Self-hosted Web App Server
+```
+
+See the [**QuickActions Documentation**](./quickActions/README.md) for detailed CLI options, examples, and workflows.
+
+---
+
 ## 🧬 Architecture Evolution
 
 FinRobot evolves alongside the rapid development of AI-agent frameworks. Rather than being tied to a single agent stack, each generation explores how emerging agent architectures can improve financial analysis, research, and decision-making.
