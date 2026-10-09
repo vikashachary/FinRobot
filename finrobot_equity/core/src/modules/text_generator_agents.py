@@ -258,28 +258,31 @@ def generate_text_section(
                 logger.info(f"Gemini OpenAI compatibility call attempt note: {e_openai}. Falling back to direct Gemini REST API...")
                 break
             
-        # Method 2: Try direct Gemini REST API with retry
-        for attempt in range(3):
-            try:
-                raw_text = _call_gemini_rest_api(
-                    api_key=api_key, 
-                    system_prompt=system_prompt, 
-                    user_prompt=user_prompt, 
-                    model=gemini_model, 
-                    base_url=gemini_base_url
-                ) or ""
-                generated_text = _clean_model_output(raw_text)
-                if generated_text:
-                    print(f"✅ Successfully generated '{prompt_type}' via Gemini REST ({len(generated_text)} chars)")
-                    return generated_text
-            except Exception as e_rest:
-                if "429" in str(e_rest) and attempt < 2:
-                    wait_sec = (attempt + 1) * 10
-                    import time
-                    time.sleep(wait_sec)
-                    continue
-                print(f"❌ Error generating '{prompt_type}' with Gemini API: {e_rest}")
-                return _get_fallback_text(prompt_type, company_name)
+        # Method 2: Try direct Gemini REST API or candidate model fallback
+        for m_candidate in [gemini_model, "gemini-2.5-flash-lite"]:
+            for attempt in range(2):
+                try:
+                    raw_text = _call_gemini_rest_api(
+                        api_key=api_key, 
+                        system_prompt=system_prompt, 
+                        user_prompt=user_prompt, 
+                        model=m_candidate, 
+                        base_url=gemini_base_url
+                    ) or ""
+                    generated_text = _clean_model_output(raw_text)
+                    if generated_text:
+                        print(f"✅ Successfully generated '{prompt_type}' via Gemini REST {m_candidate} ({len(generated_text)} chars)")
+                        return generated_text
+                except Exception as e_rest:
+                    err_str = str(e_rest)
+                    if ("429" in err_str or "RESOURCE_EXHAUSTED" in err_str) and m_candidate != "gemini-2.5-flash-lite":
+                        print(f"🔄 Switching '{prompt_type}' to fallback model gemini-2.5-flash-lite...")
+                        break
+                    if "429" in err_str and attempt < 1:
+                        import time
+                        time.sleep(5)
+                        continue
+                    logger.warning(f"Gemini REST {m_candidate} error: {e_rest}")
             
         return _get_fallback_text(prompt_type, company_name)
 

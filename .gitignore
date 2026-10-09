@@ -46,3 +46,4 @@ finrobot_equity/web_app/data/*.db
 finrobot_equity/core/output/
 output/
 finrobot_equity/core/output/build/
+graphify-out/
